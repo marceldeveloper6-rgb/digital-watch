@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Digital Watch — Alarms with Snooze/Repeat & Custom Sound</title>
+  <style>
+    :root{ --bg:#0e1116; --panel:rgba(255,255,255,0.06); --panel-border:rgba(255,255,255,0.12); --text:#e6e6e6; --accent:#7ee787; --muted:#9aa4b2; --shadow:0 10px 30px rgba(0,0,0,0.35), inset 0 0 0 1px var(--panel-border);} 
+    .light{ --bg:#f6f7fb; --panel:rgba(0,0,0,0.03); --panel-border:rgba(0,0,0,0.06); --text:#0e1116; --accent:#0ea5e9; --muted:#5b6471; --shadow:0 10px 25px rgba(0,0,0,0.08), inset 0 0 0 1px var(--panel-border);} 
+    *{box-sizing:border-box} html,body{height:100%} body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial; background:radial-gradient(1200px 800px at 70% 20%, rgba(126,231,135,0.08), transparent 60%), radial-gradient(1000px 700px at 20% 80%, rgba(14,165,233,0.10), transparent 60%), var(--bg); color:var(--text); display:grid; place-items:center; padding:24px; transition:background 300ms ease}
+    .wrap{width:min(980px,96vw)} .panel{background:var(--panel); backdrop-filter:blur(10px) saturate(120%); border-radius:16px; padding:18px; box-shadow:var(--shadow)}
+    .grid{display:grid; grid-template-columns: 1fr 360px; gap:14px}
+    .time{display:flex;align-items:baseline;gap:12px;font-variant-numeric:tabular-nums;letter-spacing:2px}
+    .hhmm{font-size:64px;font-weight:700;line-height:1}
+    .secs{font-size:28px;font-weight:600;opacity:.9}
+    .ampm{font-size:14px;color:var(--muted);font-weight:700}
+    .date{color:var(--muted);font-size:14px}
+    .controls{display:flex;flex-wrap:wrap;gap:8px}
+    button.toggle{appearance:none;border:1px solid var(--panel-border);background:linear-gradient(to bottom right, rgba(255,255,255,0.04), rgba(255,255,255,0.01));color:var(--text);padding:8px 12px;border-radius:999px;cursor:pointer;font-weight:600}
+    button.primary{background:var(--accent);color:#07120a;border:none;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:700}
+    .section{background:transparent;border-radius:10px;padding:12px;border:1px solid transparent}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input, select{width:100%;padding:8px;border-radius:8px;border:1px solid var(--panel-border);background:transparent;color:var(--text)}
+    .list{max-height:220px;overflow:auto;padding:6px;display:flex;flex-direction:column;gap:8px}
+    .item{padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .tiny{font-size:12px;color:var(--muted)}
+    .stopwatch-display{font-size:28px;font-weight:700}
+    .footer{margin-top:12px;display:flex;justify-content:space-between;color:var(--muted);font-size:13px}
+    .pill{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.02);font-weight:700}
+    .alarm-active{border-left:4px solid var(--accent)}
+    .days{display:flex;gap:6px;flex-wrap:wrap}
+    .day{padding:6px 8px;border-radius:6px;border:1px solid var(--panel-border);cursor:pointer}
+    .day.active{background:var(--accent);color:#041006}
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.4)}
+    .modal .card{background:var(--panel);padding:18px;border-radius:12px;min-width:280px}
+    @media (max-width:880px){ .grid{grid-template-columns:1fr; } .hhmm{font-size:48px} }
+    .blink{animation:blink 1s steps(2, jump-none) infinite}@keyframes blink{to{opacity:0}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel grid">
+      <div>
+        <div class="section" aria-live="polite">
+          <div class="time">
+            <div class="hhmm" id="hhmm">00<span class="blink">:</span>00</div>
+            <div class="secs" id="secs">00</div>
+            <div class="ampm" id="ampm">24H</div>
+          </div>
+          <div class="date" id="date">—</div>
+        </div>
+
+        <div class="section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <strong>Alarm</strong>
+            <div class="tiny">Label • Repeat • Snooze • Custom sound</div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label>Time</label>
+              <input id="alarmTime" type="time" />
+            </div>
+            <div>
+              <label>Timezone</label>
+              <select id="alarmTz"></select>
+            </div>
+          </div>
+
+          <label>Label</label>
+          <input id="alarmLabel" placeholder="e.g. Morning run" />
+
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+            <div style="flex:1">
+              <label>Snooze (minutes)</label>
+              <input id="snoozeMin" type="number" min="1" max="60" value="5" />
+            </div>
+            <div style="flex:1">
+              <label>Sound (optional)</label>
+              <input id="soundFile" type="file" accept="audio/*" />
+            </div>
+          </div>
+
+          <div style="margin-top:8px">
+            <label>Repeat days</label>
+            <div class="days" id="repeatDays">
+              <div class="day" data-day="0">Sun</div>
+              <div class="day" data-day="1">Mon</div>
+              <div class="day" data-day="2">Tue</div>
+              <div class="day" data-day="3">Wed</div>
+              <div class="day" data-day="4">Thu</div>
+              <div class="day" data-day="5">Fri</div>
+              <div class="day" data-day="6">Sat</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button id="addAlarm" class="primary">Add Alarm</button>
+            <button id="clearAlarms" class="toggle">Clear All</button>
+          </div>
+
+          <div class="list" id="alarmsList" aria-live="polite" style="margin-top:12px"></div>
+        </div>
+
+        <div class="section" style="margin-top:12px">
+          <strong>Stopwatch</strong>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+            <div class="stopwatch-display" id="swDisplay">00:00.00</div>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button id="swStart" class="toggle">Start</button>
+              <button id="swLap" class="toggle">Lap</button>
+              <button id="swReset" class="toggle">Reset</button>
+            </div>
+          </div>
+          <div class="list" id="laps"></div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="section">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong>World Clocks</strong>
+            <div class="tiny">Add quick zones</div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <select id="tzSelect"></select>
+            <button id="addTz" class="toggle">Add</button>
+          </div>
+          <div class="list" id="tzList"></div>
+        </div>
+
+        <div class="section" style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="tiny">Display</div>
+              <div class="pill" id="zoneName">Local</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div class="controls">
+                <button id="modeBtn" class="toggle">24‑hour</button>
+                <button id="secBtn" class="toggle">Seconds</button>
+                <button id="themeBtn" class="toggle">Light</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <div id="tz" class="tiny"></div>
+            <div id="uptime" class="tiny"></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Modal shown when an alarm fires -->
+  <div class="modal" id="alarmModal" role="dialog" aria-modal="true">
+    <div class="card">
+      <div id="alarmModalTitle"><strong>Alarm</strong></div>
+      <div id="alarmModalLabel" class="tiny" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="snoozeBtn" class="primary">Snooze</button>
+        <button id="stopAlarm" class="toggle">Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="alarmAudio" preload="auto"></audio>
+
+  <script>
+    (function(){
+      // Elements
+      const hhmm = document.getElementById('hhmm');
+      const secs = document.getElementById('secs');
+      const ampm = document.getElementById('ampm');
+      const dateEl = document.getElementById('date');
+      const tzEl = document.getElementById('tz');
+      const uptimeEl = document.getElementById('uptime');
+      const modeBtn = document.getElementById('modeBtn');
+      const secBtn = document.getElementById('secBtn');
+      const themeBtn = document.getElementById('themeBtn');
+
+      const alarmTime = document.getElementById('alarmTime');
+      const alarmTz = document.getElementById('alarmTz');
+      const addAlarmBtn = document.getElementById('addAlarm');
+      const alarmsList = document.getElementById('alarmsList');
+      const alarmLabelInput = document.getElementById('alarmLabel');
+      const snoozeMinInput = document.getElementById('snoozeMin');
+      const soundFileInput = document.getElementById('soundFile');
+      const repeatDaysEl = document.getElementById('repeatDays');
+      const clearAlarmsBtn = document.getElementById('clearAlarms');
+
+      const swDisplay = document.getElementById('swDisplay');
+      const swStart = document.getElementById('swStart');
+      const swLap = document.getElementById('swLap');
+      const swReset = document.getElementById('swReset');
+      const lapsList = document.getElementById('laps');
+
+      const tzSelect = document.getElementById('tzSelect');
+      const addTz = document.getElementById('addTz');
+      const tzList = document.getElementById('tzList');
+      const zoneName = document.getElementById('zoneName');
+
+      const alarmModal = document.getElementById('alarmModal');
+      const alarmModalTitle = document.getElementById('alarmModalTitle');
+      const alarmModalLabel = document.getElementById('alarmModalLabel');
+      const snoozeBtn = document.getElementById('snoozeBtn');
+      const stopAlarmBtn = document.getElementById('stopAlarm');
+
+      const alarmAudio = document.getElementById('alarmAudio');
+
+      // State
+      let use24h = JSON.parse(localStorage.getItem('use24h') ?? 'true');
+      let showSecs = JSON.parse(localStorage.getItem('showSecs') ?? 'true');
+      let lightTheme = JSON.parse(localStorage.getItem('lightTheme') ?? 'false');
+      let alarms = JSON.parse(localStorage.getItem('alarms') ?? '[]');
+      let tzs = JSON.parse(localStorage.getItem('tzs') ?? '[]');
+
+      let swRunning = false; let swStartTime = 0; let swElapsed = 0; let swTimer = null;
+      const startUptime = Date.now();
+
+      // timezone list
+      const allZones = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : [Intl.DateTimeFormat().resolvedOptions().timeZone];
+      const zones = allZones && allZones.length ? allZones : [Intl.DateTimeFormat().resolvedOptions().timeZone];
+
+      function populateZoneInputs(){ const sample = zones.slice(0,200); tzSelect.innerHTML = sample.map(z=>`<option value="${z}">${z}</option>`).join(''); alarmTz.innerHTML = sample.map(z=>`<option value="${z}">${z}</option>`).join(''); }
+
+      function save(){ localStorage.setItem('alarms', JSON.stringify(alarms)); localStorage.setItem('tzs', JSON.stringify(tzs)); localStorage.setItem('use24h', JSON.stringify(use24h)); localStorage.setItem('showSecs', JSON.stringify(showSecs)); localStorage.setItem('lightTheme', JSON.stringify(lightTheme)); }
+
+      // Helpers
+      function daysToStr(arr){ if(!arr || !arr.length) return 'Once'; if(arr.length===7) return 'Every day'; return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].filter((d,i)=>arr.includes(i)).join(', '); }
+
+      function renderAlarms(){ alarmsList.innerHTML = alarms.length ? alarms.map((a,idx)=>{
+        const cls = a.enabled ? 'item alarm-active' : 'item';
+        const repeat = daysToStr(a.repeat);
+        const label = a.label ? ` — ${a.label}` : '';
+        const sound = a.soundName ? ` • ${a.soundName}` : '';
+        return `<div class="${cls}" data-idx="${idx}"><div style="display:flex;flex-direction:column"><strong>${a.timeStr}${label}</strong><span class="tiny">${a.tz} • ${repeat}${sound}</span></div><div style="display:flex;gap:8px"><button data-action="toggle" data-idx="${idx}" class="toggle">${a.enabled?'On':'Off'}</button><button data-action="edit" data-idx="${idx}" class="toggle">Edit</button><button data-action="del" data-idx="${idx}" class="toggle">Del</button></div></div>`;
+      }).join('') : '<div class="tiny">No alarms set</div>' }
+
+      alarmsList.addEventListener('click', (e)=>{
+        const btn = e.target.closest('button'); if(!btn) return; const idx = Number(btn.dataset.idx); const action = btn.dataset.action; if(action==='toggle'){ alarms[idx].enabled = !alarms[idx].enabled; save(); renderAlarms(); } else if(action==='del'){ alarms.splice(idx,1); save(); renderAlarms(); } else if(action==='edit'){ openEdit(idx); }
+      });
+
+      // Add alarm
+      function collectRepeatDays(){ const active = []; repeatDaysEl.querySelectorAll('.day.active').forEach(d=> active.push(Number(d.dataset.day))); return active; }
+
+      function readSoundFileAsDataUrl(file){ return new Promise((res,rej)=>{ const r = new FileReader(); r.onload = ()=>res({data:r.result, name:file.name}); r.onerror = rej; r.readAsDataURL(file); }); }
+
+      async function addAlarm(){ const t = alarmTime.value; const tz = alarmTz.value || Intl.DateTimeFormat().resolvedOptions().timeZone; if(!t) return alert('Pick a time'); const [hh,mm] = t.split(':').map(Number); const label = alarmLabelInput.value || ''; const snooze = Math.max(1, Math.min(60, Number(snoozeMinInput.value)||5)); const repeat = collectRepeatDays(); let soundName = ''; let soundData = null; if(soundFileInput.files && soundFileInput.files[0]){ try{ const res = await readSoundFileAsDataUrl(soundFileInput.files[0]); soundName = res.name; soundData = res.data; }catch(e){ console.warn('sound read failed', e); } }
+        alarms.push({ timeStr:t, tz, hh, mm, enabled:true, repeat, label, snooze, soundData, soundName, snoozedUntil:0 }); save(); renderAlarms(); // reset inputs
+        alarmTime.value=''; alarmLabelInput.value=''; soundFileInput.value=''; repeatDaysEl.querySelectorAll('.day.active').forEach(d=>d.classList.remove('active'));
+      }
+
+      addAlarmBtn.addEventListener('click', ()=>{ addAlarm().catch(e=>console.error(e)); });
+      clearAlarmsBtn.addEventListener('click', ()=>{ if(confirm('Clear all alarms?')){ alarms = []; save(); renderAlarms(); } });
+
+      // Edit alarm (simple: populate inputs and remove old)
+      function openEdit(idx){ const a = alarms[idx]; if(!a) return; alarmTime.value = a.timeStr; alarmTz.value = a.tz; alarmLabelInput.value = a.label||''; snoozeMinInput.value = a.snooze||5; // set repeat
+        repeatDaysEl.querySelectorAll('.day').forEach(d=>{ d.classList.toggle('active', a.repeat && a.repeat.includes(Number(d.dataset.day))); });
+        // remove old
+        alarms.splice(idx,1); save(); renderAlarms(); }
+
+      // Alarm checking
+      let lastAlarmKey = '';
+      function shouldFire(a, now){ // check repeat and snooze
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone: a.tz, hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }).formatToParts(now);
+        const h = Number(parts.find(p=>p.type==='hour').value);
+        const m = Number(parts.find(p=>p.type==='minute').value);
+        const s = Number(parts.find(p=>p.type==='second').value);
+        if(h!==a.hh || m!==a.mm || s!==0) return false;
+        // repeat check
+        const dayIndex = Number(new Intl.DateTimeFormat('en-US', { timeZone: a.tz, weekday: 'short' }).formatToParts(now).find(p=>p.type==='weekday')?.value ? new Date().getDay() : new Date(now).getDay());
+        if(a.repeat && a.repeat.length){ const nowInTz = new Intl.DateTimeFormat('en-US', { timeZone: a.tz, weekday: 'short' }).format(now); // fallback
+          const dow = new Date().toLocaleString('en-US', { timeZone: a.tz, weekday:'short' }); // not perfect but adequate
+          const dayMap = {'Sun':0,'Mon':1,'Tue':2,'Wed':3,'Thu':4,'Fri':5,'Sat':6};
+          const dIndex = dayMap[dow] ?? new Date(now).getDay(); if(!a.repeat.includes(dIndex)) return false; }
+        // snooze
+        if(a.snoozedUntil && now.getTime() < a.snoozedUntil) return false;
+        return true;
+      }
+
+      let activeAlarm = null; let audioCtx = null; let oscillator = null; let audioPlaying = false;
+
+      function playAlarmAudio(a){ if(a.soundData){ alarmAudio.src = a.soundData; alarmAudio.loop = true; alarmAudio.play().catch(()=>{}); audioPlaying = true; } else {
+        // WebAudio beep loop
+        try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); oscillator = audioCtx.createOscillator(); const gain = audioCtx.createGain(); oscillator.type='sine'; oscillator.frequency.value = 880; gain.gain.value = 0.05; oscillator.connect(gain); gain.connect(audioCtx.destination); oscillator.start(); audioPlaying = true; }catch(e){ console.warn('WebAudio failed', e); }
+      } }
+
+      function stopAlarmAudio(){ try{ if(alarmAudio && !alarmAudio.paused){ alarmAudio.pause(); alarmAudio.currentTime = 0; } if(oscillator){ oscillator.stop(); oscillator.disconnect(); oscillator = null; } if(audioCtx){ audioCtx.close(); audioCtx = null; } audioPlaying = false; }catch(e){ console.warn(e); } }
+
+      function triggerAlarm(a){ if(activeAlarm) return; activeAlarm = a; alarmModalLabel.textContent = `${a.timeStr}${a.label? ' — ' + a.label : ''} (${a.tz})`; alarmModal.style.display='flex'; playAlarmAudio(a); }
+
+      snoozeBtn.addEventListener('click', ()=>{ if(!activeAlarm) return; const minutes = Number(activeAlarm.snooze || snoozeMinInput.value || 5); activeAlarm.snoozedUntil = Date.now() + minutes*60000; stopAlarmAudio(); alarmModal.style.display='none'; activeAlarm = null; save(); });
+      stopAlarmBtn.addEventListener('click', ()=>{ if(!activeAlarm) return; // if repeat is empty disable for today or leave enabled
+        stopAlarmAudio(); alarmModal.style.display='none'; // if alarm has no repeat, disable it after firing once
+        if(!activeAlarm.repeat || !activeAlarm.repeat.length){ activeAlarm.enabled = false; }
+        activeAlarm = null; save(); renderAlarms(); });
+
+      function checkAlarms(){ if(!alarms.length) return; const now = new Date(); for(const a of alarms){ if(!a.enabled) continue; if(shouldFire(a, now)){ // avoid firing the same alarm multiple times in the same second
+            const key = `${a.timeStr}@${a.tz}`; if(key === lastAlarmKey) continue; lastAlarmKey = key; triggerAlarm(a); setTimeout(()=>{ lastAlarmKey = ''; }, 2000); }
+        }
+      }
+
+      // Stopwatch (same as before)
+      function formatMs(ms){ const total = Math.floor(ms/10); const cs = total % 100; const s = Math.floor(total/100) % 60; const m = Math.floor(total/6000); return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`; }
+      function swTick(){ const now = Date.now(); swElapsed = now - swStartTime; swDisplay.textContent = formatMs(swElapsed); }
+      swStart.addEventListener('click', ()=>{ if(!swRunning){ swRunning = true; swStartTime = Date.now() - swElapsed; swTimer = setInterval(swTick, 37); swStart.textContent='Stop'; } else { swRunning = false; clearInterval(swTimer); swStart.textContent='Start'; } });
+      swLap.addEventListener('click', ()=>{ if(!swRunning) return; const t = formatMs(swElapsed); const div = document.createElement('div'); div.className='item'; div.textContent = t; lapsList.prepend(div); });
+      swReset.addEventListener('click', ()=>{ swRunning=false; clearInterval(swTimer); swElapsed=0; swDisplay.textContent='00:00.00'; swStart.textContent='Start'; lapsList.innerHTML=''; });
+
+      // Timezones UI
+      function renderTzList(){ tzList.innerHTML = tzs.length ? tzs.map((z,idx)=>{ const now = new Date().toLocaleString('en-US', { timeZone: z }); return `<div class="item"><div style="display:flex;flex-direction:column"><strong>${z}</strong><span class="tiny">${now}</span></div><div><button data-idx="${idx}" data-action="del" class="toggle">Remove</button></div></div>` }).join('') : '<div class="tiny">No zones added</div>'; }
+      tzList.addEventListener('click',(e)=>{ const btn = e.target.closest('button'); if(!btn) return; const idx = Number(btn.dataset.idx); tzs.splice(idx,1); save(); renderTzList(); });
+      addTz.addEventListener('click', ()=>{ const z = tzSelect.value; if(!z) return; if(!tzs.includes(z)) tzs.push(z); save(); renderTzList(); });
+
+      // Repeat day toggles
+      repeatDaysEl.addEventListener('click', (e)=>{ const d = e.target.closest('.day'); if(!d) return; d.classList.toggle('active'); });
+
+      // UI toggles
+      function setPressed(btn,val){ btn.setAttribute('aria-pressed', String(val)); }
+      modeBtn.addEventListener('click', ()=>{ use24h = !use24h; setPressed(modeBtn,use24h); modeBtn.textContent = use24h ? '24‑hour' : '12‑hour'; save(); renderNow(); });
+      secBtn.addEventListener('click', ()=>{ showSecs = !showSecs; setPressed(secBtn, showSecs); save(); renderNow(); });
+      themeBtn.addEventListener('click', ()=>{ lightTheme = !lightTheme; setPressed(themeBtn, lightTheme); themeBtn.textContent = lightTheme ? 'Dark' : 'Light'; document.documentElement.classList.toggle('light', lightTheme); save(); });
+
+      // Render time
+      function renderNow(){ const now = new Date(); const opts = { hour: '2-digit', minute: '2-digit', hour12: !use24h }; const parts = new Intl.DateTimeFormat(undefined, opts).formatToParts(now); const h = parts.find(p=>p.type==='hour').value; const m = parts.find(p=>p.type==='minute').value; const colon = '<span class="blink">:</span>'; hhmm.innerHTML = `${h}${colon}${m}`; if(showSecs){ secs.style.display=''; secs.textContent = String(now.getSeconds()).padStart(2,'0'); } else { secs.style.display='none'; } if(use24h){ ampm.textContent='24H'; ampm.setAttribute('aria-hidden','true'); } else { const dayPeriod = parts.find(p=>p.type==='dayPeriod')?.value?.toUpperCase?.() || ''; ampm.textContent = dayPeriod; ampm.removeAttribute('aria-hidden'); } dateEl.textContent = new Intl.DateTimeFormat(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric'}).format(now); }
+
+      function tick(){ renderNow(); checkAlarms(); requestAnimationFrame(()=>{ const ms = 1000 - (Date.now() % 1000); setTimeout(tick, ms); }); }
+      function updateTZ(){ try{ const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; tzEl.textContent = zone ? `Time zone: ${zone}` : ''; }catch{ tzEl.textContent=''; } }
+      function updateUptime(){ const s = Math.floor((Date.now()-startUptime)/1000); const mm = Math.floor(s/60); const ss = s%60; uptimeEl.textContent = `Running: ${mm}m ${ss}s`; }
+
+      // Init
+      populateZoneInputs(); setPressed(modeBtn, use24h); setPressed(secBtn, showSecs); setPressed(themeBtn, lightTheme); modeBtn.textContent = use24h ? '24‑hour' : '12‑hour'; themeBtn.textContent = lightTheme ? 'Dark' : 'Light'; document.documentElement.classList.toggle('light', lightTheme);
+      renderAlarms(); renderTzList(); updateTZ(); renderNow(); tick(); setInterval(updateUptime,1000);
+      // focus
+      alarmTime.focus();
+    })();
+  </script>
+</body>
+</html>
